@@ -8,7 +8,9 @@ const crypto = require('crypto');
 const app = express();
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+// نستخدم اسم متغيّر مختلف عن PORT لأن Railway يحقن PORT تلقائياً بقيمته الخاصة،
+// والـ backend هنا خدمة داخلية غير معروضة للعامة، فنثبّت منفذها بمعزل عن ذلك
+const PORT = process.env.BACKEND_PORT || 3000;
 const DOWNLOAD_DIR = path.join(__dirname, 'downloads');
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR);
 
@@ -36,39 +38,57 @@ function isValidUrl(str) {
   }
 }
 
-// بينتيريست غالباً صور، وyt-dlp لا يدعمها جيداً، لذا نستخدم gallery-dl لهذه الحالة
 function isPinterestUrl(url) {
   return /pinterest\.[a-z.]+\/|pin\.it\//i.test(url);
 }
 
-function runDownloader(url, id) {
+// ينفّذ أي أمر تنزيل (yt-dlp أو gallery-dl) ويرجع Promise
+function runCommand(cmd, args) {
   return new Promise((resolve, reject) => {
-    const outputTemplate = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`);
-    let cmd, args;
-
-    if (isPinterestUrl(url)) {
-      cmd = 'gallery-dl';
-      args = ['-d', DOWNLOAD_DIR, '-o', `filename=${id}.{extension}`, url];
-    } else {
-      cmd = 'yt-dlp';
-      args = [
-        '-f', 'best[ext=mp4]/best',
-        '--max-filesize', `${MAX_FILE_SIZE_MB}M`,
-        '-o', outputTemplate,
-        '--no-playlist',
-        url,
-      ];
-    }
-
     const proc = spawn(cmd, args);
     let stderr = '';
     proc.stderr.on('data', (d) => { stderr += d.toString(); });
     proc.on('error', (err) => reject(new Error(`${cmd} غير مثبت: ${err.message}`)));
     proc.on('close', (code) => {
-      if (code !== 0) return reject(new Error(stderr || `فشل ${cmd}`));
+      if (code !== 0) return reject(new Error(stderr || `فشل ${cmd} برمز ${code}`));
       resolve();
     });
   });
+}
+
+function galleryDlArgs(url, id) {
+  return ['-d', DOWNLOAD_DIR, '-o', `filename=${id}.{extension}`, url];
+}
+
+function ytDlpArgs(url, id) {
+  const outputTemplate = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`);
+  return [
+    '-f', 'best[ext=mp4]/best',
+    '--max-filesize', `${MAX_FILE_SIZE_MB}M`,
+    '-o', outputTemplate,
+    '--no-playlist',
+    url,
+  ];
+}
+
+// المنطق: بينتيريست يذهب مباشرة لـ gallery-dl (صور غالباً).
+// أي منصة أخرى: نجرّب yt-dlp أولاً (أفضل للفيديو)، وإذا فشل نجرّب gallery-dl
+// كخطة بديلة (يغطي منشورات الصور في انستغرام، تويتر، فيسبوك، ريديت... إلخ)
+async function runDownloader(url, id) {
+  if (isPinterestUrl(url)) {
+    await runCommand('gallery-dl', galleryDlArgs(url, id));
+    return;
+  }
+
+  try {
+    await runCommand('yt-dlp', ytDlpArgs(url, id));
+  } catch (ytErr) {
+    try {
+      await runCommand('gallery-dl', galleryDlArgs(url, id));
+    } catch (galleryErr) {
+      throw new Error('تعذّر تنزيل المحتوى سواء كان فيديو أو صورة');
+    }
+  }
 }
 
 app.post('/api/download', async (req, res) => {
@@ -102,7 +122,7 @@ app.post('/api/download', async (req, res) => {
   res.setHeader('Content-Type', CONTENT_TYPES[ext] || 'application/octet-stream');
   res.setHeader('Content-Length', stat.size);
   res.setHeader('Content-Disposition', `attachment; filename="${files[0]}"`);
-  res.setHeader('X-Media-Type', mediaType); // ليعرف البوت كيف يرسلها (صورة أم فيديو)
+  res.setHeader('X-Media-Type', mediaType);
 
   const stream = fs.createReadStream(filePath);
   stream.pipe(res);
