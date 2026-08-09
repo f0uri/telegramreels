@@ -20,6 +20,8 @@ COPY bot ./bot
 COPY start.sh ./start.sh
 RUN chmod +x start.sh
 
+ENV BACKEND_PORT=3000
+
 EXPOSE 3000
 
 CMD ["./start.sh"]
