@@ -8,13 +8,10 @@ const crypto = require('crypto');
 const app = express();
 app.use(express.json());
 
-// نستخدم اسم متغيّر مختلف عن PORT لأن Railway يحقن PORT تلقائياً بقيمته الخاصة،
-// والـ backend هنا خدمة داخلية غير معروضة للعامة، فنثبّت منفذها بمعزل عن ذلك
-const PORT = process.env.BACKEND_PORT || 3000;
+const PORT = process.env.PORT || 3000;
 const DOWNLOAD_DIR = path.join(__dirname, 'downloads');
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR);
 
-// حد 50 ميجا لأن هذا أقصى حجم يمكن لبوت تيليجرام رفعه مباشرة عبر الـ API العادي
 const MAX_FILE_SIZE_MB = 50;
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
@@ -42,7 +39,6 @@ function isPinterestUrl(url) {
   return /pinterest\.[a-z.]+\/|pin\.it\//i.test(url);
 }
 
-// ينفّذ أي أمر تنزيل (yt-dlp أو gallery-dl) ويرجع Promise
 function runCommand(cmd, args) {
   return new Promise((resolve, reject) => {
     const proc = spawn(cmd, args);
@@ -71,9 +67,6 @@ function ytDlpArgs(url, id) {
   ];
 }
 
-// المنطق: بينتيريست يذهب مباشرة لـ gallery-dl (صور غالباً).
-// أي منصة أخرى: نجرّب yt-dlp أولاً (أفضل للفيديو)، وإذا فشل نجرّب gallery-dl
-// كخطة بديلة (يغطي منشورات الصور في انستغرام، تويتر، فيسبوك، ريديت... إلخ)
 async function runDownloader(url, id) {
   if (isPinterestUrl(url)) {
     await runCommand('gallery-dl', galleryDlArgs(url, id));
@@ -83,9 +76,13 @@ async function runDownloader(url, id) {
   try {
     await runCommand('yt-dlp', ytDlpArgs(url, id));
   } catch (ytErr) {
+    console.error('--- yt-dlp فشل ---');
+    console.error(ytErr.message);
     try {
       await runCommand('gallery-dl', galleryDlArgs(url, id));
     } catch (galleryErr) {
+      console.error('--- gallery-dl فشل أيضاً ---');
+      console.error(galleryErr.message);
       throw new Error('تعذّر تنزيل المحتوى سواء كان فيديو أو صورة');
     }
   }
@@ -137,4 +134,3 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.listen(PORT, () => {
   console.log(`Backend يعمل على المنفذ ${PORT}`);
 });
-
