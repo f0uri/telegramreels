@@ -23,6 +23,8 @@ const PLATFORM_NAMES = {
   'youtu.be': '▶️ يوتيوب',
   'twitter.com': '🐦 تويتر (X)',
   'x.com': '🐦 تويتر (X)',
+  'pinterest.com': '📌 بينتيريست',
+  'pin.it': '📌 بينتيريست',
 };
 
 function detectPlatform(url) {
@@ -40,7 +42,7 @@ const HELP_TEXT =
   'فقط أرسل رابط أي فيديو أو ريلز وسأحمّله لك مباشرة، بدون علامات مائية أو إعلانات.\n\n' +
   '📥 <b>المنصات المدعومة</b>\n' +
   '📸 انستغرام  •  🎵 تيك توك  •  📘 فيسبوك\n' +
-  '▶️ يوتيوب شورتس  •  🐦 تويتر / X\n\n' +
+  '▶️ يوتيوب شورتس  •  🐦 تويتر / X  •  📌 بينتيريست\n\n' +
   '⚠️ الحد الأقصى لحجم الفيديو: <b>50MB</b>\n\n' +
   'الأوامر:\n' +
   '/start — رسالة الترحيب\n' +
@@ -108,14 +110,15 @@ bot.on('text', async (ctx) => {
     }
 
     const sizeMB = (response.data.byteLength / (1024 * 1024)).toFixed(1);
+    const mediaType = response.headers['x-media-type'] || 'video';
+    const caption = `${platform}\n✅ تم التحميل بنجاح  •  ${sizeMB}MB`;
+    const buffer = Buffer.from(response.data);
 
-    await ctx.replyWithVideo(
-      { source: Buffer.from(response.data) },
-      {
-        caption: `${platform}\n✅ تم التحميل بنجاح  •  ${sizeMB}MB`,
-        parse_mode: 'HTML',
-      }
-    );
+    if (mediaType === 'photo') {
+      await ctx.replyWithPhoto({ source: buffer }, { caption, parse_mode: 'HTML' });
+    } else {
+      await ctx.replyWithVideo({ source: buffer }, { caption, parse_mode: 'HTML' });
+    }
     await ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id).catch(() => {});
   } catch (err) {
     console.error(err.message);
