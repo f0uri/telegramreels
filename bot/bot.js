@@ -3,7 +3,7 @@ const { Telegraf } = require('telegraf');
 const axios = require('axios');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${process.env.BACKEND_PORT || 3000}`;
 
 if (!BOT_TOKEN) {
   console.error('يجب تعيين BOT_TOKEN في ملف .env (احصل عليه من @BotFather)');
